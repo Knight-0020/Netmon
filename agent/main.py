@@ -243,12 +243,16 @@ def _arping(ip: str, iface: str):
 
 def _active_scan_ips():
     try:
-        out = subprocess.check_output(
-            ["fping", "-a", "-g", "-q", "-r", "1", LAN_CIDR],
+        proc = subprocess.run(
+            ["fping", "-a", "-g", "-r", "1", "-t", "200", LAN_CIDR],
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            text=True,
             timeout=FPING_TIMEOUT_SEC
-        ).decode(errors="ignore")
-        ips = [line.strip() for line in out.splitlines() if line.strip()]
+        )
+        if proc.returncode not in (0, 1):
+            logger.info(f"fping returned code {proc.returncode}")
+        ips = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
         return ips
     except Exception as e:
         logger.error(f"fping active scan failed: {e}")
@@ -269,6 +273,10 @@ def robust_scan_job():
         logger.info("Running scan...")
         now = time.time()
         alive_ips = _active_scan_ips()
+        if not alive_ips:
+            fallback = get_arp_table()
+            alive_ips = [d["ip"] for d in fallback]
+            logger.info(f"Active scan empty, fallback ip neigh count {len(alive_ips)}")
         logger.info(f"Active scan found {len(alive_ips)} alive IPs")
         ingested = 0
 
