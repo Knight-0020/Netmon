@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
+from typing import Literal
 
 
 class DeviceBase(BaseModel):
@@ -98,3 +99,16 @@ class IncidentOut(BaseModel):
 class InternetStatusOut(BaseModel):
     recent_checks: List[HealthCheckOut]
     incidents: List[IncidentOut]
+
+
+class IncidentCreate(BaseModel):
+    type: str
+    description: Optional[str] = None
+    status: Literal["OPEN", "RESOLVED"]
+
+    @field_validator("type")
+    @classmethod
+    def incident_type_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("type must not be empty")
+        return v.strip()

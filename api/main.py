@@ -4,12 +4,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from database import engine, Base, get_db
 import models, schemas
 
 app = FastAPI(title="NetMon API")
+
+
+def now_utc():
+    return datetime.now(timezone.utc)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,7 +36,7 @@ async def ingest_device(device_in: schemas.DeviceCreate, db: AsyncSession = Depe
     device = result.scalars().first()
 
     if device:
-        device.last_seen = datetime.now()
+        device.last_seen = now_utc()
         device.ip_address = device_in.ip_address
         device.is_online = True
         if device_in.hostname:
@@ -49,7 +53,7 @@ async def ingest_device(device_in: schemas.DeviceCreate, db: AsyncSession = Depe
             vendor=device_in.vendor,
             tags=device_in.tags or [],
             is_online=True,
-            last_seen=datetime.now(),
+            last_seen=now_utc(),
         )
         db.add(device)
 
@@ -71,7 +75,7 @@ async def ingest_event(event_in: schemas.EventCreate, db: AsyncSession = Depends
                 vendor=None,
                 tags=[],
                 is_online=False,
-                last_seen=datetime.now(),
+                last_seen=now_utc(),
             )
             db.add(dev)
             await db.flush()  # ensure device inserted before event insert
@@ -80,7 +84,7 @@ async def ingest_event(event_in: schemas.EventCreate, db: AsyncSession = Depends
         type=event_in.type,
         message=event_in.message,
         device_mac=event_in.device_mac,
-        timestamp=event_in.timestamp or datetime.now(),
+        timestamp=event_in.timestamp or now_utc(),
     )
     db.add(event)
 
@@ -95,7 +99,7 @@ async def ingest_event(event_in: schemas.EventCreate, db: AsyncSession = Depends
         dev = res.scalars().first()
         if dev:
             dev.is_online = True
-            dev.last_seen = datetime.now()
+            dev.last_seen = now_utc()
 
     await db.commit()
     return {"status": "ok"}
@@ -115,31 +119,30 @@ async def ingest_health(health_in: schemas.HealthCheckCreate, db: AsyncSession =
 
 
 @app.post("/ingest/incident")
-async def ingest_incident(incident_data: dict, db: AsyncSession = Depends(get_db)):
-    # incident_data: {type: str, description: str, status: "OPEN"|"RESOLVED"}
-    if incident_data.get("status") == "OPEN":
+async def ingest_incident(incident_data: schemas.IncidentCreate, db: AsyncSession = Depends(get_db)):
+    if incident_data.status == "OPEN":
         res = await db.execute(
             select(models.Incident)
-            .where(models.Incident.type == incident_data["type"])
+            .where(models.Incident.type == incident_data.type)
             .where(models.Incident.end_time == None)
         )
         existing = res.scalars().first()
         if not existing:
             inc = models.Incident(
-                type=incident_data["type"],
-                description=incident_data.get("description", "")
+                type=incident_data.type,
+                description=incident_data.description or ""
             )
             db.add(inc)
 
-    elif incident_data.get("status") == "RESOLVED":
+    elif incident_data.status == "RESOLVED":
         res = await db.execute(
             select(models.Incident)
-            .where(models.Incident.type == incident_data["type"])
+            .where(models.Incident.type == incident_data.type)
             .where(models.Incident.end_time == None)
         )
         existing = res.scalars().first()
         if existing:
-            existing.end_time = datetime.now()
+            existing.end_time = now_utc()
 
     await db.commit()
     return {"status": "ok"}

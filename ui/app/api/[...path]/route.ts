@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const ENV_API_BASE = process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE;
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function resolveApiBase(req: NextRequest) {
     if (ENV_API_BASE) return ENV_API_BASE;
 
