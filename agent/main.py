@@ -5,6 +5,7 @@ import subprocess
 import requests
 import socket
 import logging
+import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -18,6 +19,44 @@ PING_TARGETS = os.getenv("PING_TARGETS", "1.1.1.1,8.8.8.8").split(",")
 INTERNET_DOWN_THRESHOLD = int(os.getenv("INTERNET_DOWN_THRESHOLD", "3"))
 
 REQ_TIMEOUT = 2
+OUI_PATH = "/usr/share/ieee-data/oui.txt"
+
+
+def load_oui_db(path: str):
+    db = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "(hex)" in line:
+                    parts = line.split("(hex)")
+                elif "(base 16)" in line:
+                    parts = line.split("(base 16)")
+                else:
+                    continue
+
+                if len(parts) < 2:
+                    continue
+
+                prefix = parts[0].strip().replace("-", "").replace(":", "").upper()
+                vendor = parts[1].strip()
+                if len(prefix) >= 6 and vendor:
+                    db[prefix[:6]] = vendor
+    except Exception as e:
+        logger.error(f"Failed to load OUI DB: {e}")
+    logger.info(f"Loaded {len(db)} OUI entries")
+    return db
+
+
+OUI_DB = load_oui_db(OUI_PATH)
+
+
+def mac_vendor(mac: str):
+    if not mac:
+        return None
+    normalized = re.sub(r"[^0-9A-Fa-f]", "", mac).upper()
+    if len(normalized) < 6:
+        return None
+    return OUI_DB.get(normalized[:6])
 
 
 def post_json(path: str, payload: dict):
@@ -79,6 +118,11 @@ def robust_scan_job():
         for entry in current_arp:
             mac = entry["mac"]
             ip = entry["ip"]
+            if ip.startswith("172.") and mac.lower().startswith("02:42:"):
+                continue
+
+            host = resolve_hostname(ip)
+            vend = mac_vendor(mac)
 
             if mac not in device_state:
                 logger.info(f"New Device: {mac}")
@@ -88,8 +132,8 @@ def robust_scan_job():
                 post_json("/ingest/device", {
                     "mac": mac,
                     "ip_address": ip,
-                    "hostname": resolve_hostname(ip),
-                    "vendor": None,
+                    "hostname": host,
+                    "vendor": vend,
                     "tags": []
                 })
             else:
@@ -103,7 +147,12 @@ def robust_scan_job():
                 device_state[mac]["last_seen"] = now
                 device_state[mac]["is_online"] = True
 
-                post_json("/ingest/device", {"mac": mac, "ip_address": ip})
+                post_json("/ingest/device", {
+                    "mac": mac,
+                    "ip_address": ip,
+                    "hostname": host,
+                    "vendor": vend
+                })
 
         for mac, data in device_state.items():
             if data["is_online"] and (now - data["last_seen"] > OFFLINE_AFTER_SEC):

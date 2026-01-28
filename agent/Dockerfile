@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     iproute2 \
     fping \
     iputils-ping \
+    ieee-data \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

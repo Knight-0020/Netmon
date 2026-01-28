@@ -17,6 +17,18 @@ export default function DeviceDetailPage({ params }: { params: { mac: string } }
     const [tagsInput, setTagsInput] = useState('');
     const [saving, setSaving] = useState(false);
 
+    const deviceTitle = (device: any) => {
+        const name = device.name?.trim();
+        if (name) return name;
+        const host = device.hostname?.trim();
+        if (host) return host;
+        if (device.vendor) {
+            const macSuffix = String(device.mac || '').slice(-5);
+            return `${device.vendor} (${macSuffix})`;
+        }
+        return 'Unknown Device';
+    };
+
     useEffect(() => {
         if (!device) return;
         setName(device.name || '');
@@ -54,7 +66,7 @@ export default function DeviceDetailPage({ params }: { params: { mac: string } }
             <div className="flex items-center justify-between">
                 <div>
                     <Link href="/devices" className="text-slate-400 hover:text-white text-sm">{'<- Back to devices'}</Link>
-                    <h1 className="text-3xl font-bold text-white mt-2">{device.name || device.hostname || 'Unknown Device'}</h1>
+                    <h1 className="text-3xl font-bold text-white mt-2">{deviceTitle(device)}</h1>
                     <div className="text-slate-500 text-sm font-mono mt-1">{device.mac}</div>
                 </div>
                 <button

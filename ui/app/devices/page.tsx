@@ -48,6 +48,18 @@ export default function DevicesPage() {
         }
     };
 
+    const deviceTitle = (device: any) => {
+        const name = device.name?.trim();
+        if (name) return name;
+        const host = device.hostname?.trim();
+        if (host) return host;
+        if (device.vendor) {
+            const macSuffix = String(device.mac || '').slice(-5);
+            return `${device.vendor} (${macSuffix})`;
+        }
+        return 'Unknown Device';
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -98,7 +110,7 @@ export default function DevicesPage() {
                                     ) : (
                                         <h3 className="text-white font-semibold flex items-center gap-2">
                                             <Link className="hover:underline" href={`/devices/${encodeURIComponent(device.mac)}`}>
-                                                {device.name || device.hostname || 'Unknown Device'}
+                                                {deviceTitle(device)}
                                             </Link>
                                             <button onClick={() => startEdit(device)} className="text-slate-500 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Edit2 size={12} />
