@@ -26,6 +26,9 @@ OUI_PATH = "/usr/share/ieee-data/oui.txt"
 ENABLE_HOSTNAME_RESOLVE = os.getenv("ENABLE_HOSTNAME_RESOLVE", "false").lower() == "true"
 RESOLVE_METHODS = [m.strip().lower() for m in os.getenv("RESOLVE_METHODS", "rdns,mdns,netbios,nmap").split(",") if m.strip()]
 NAME_CACHE_TTL_SEC = int(os.getenv("NAME_CACHE_TTL_SEC", "43200"))
+ARPING_TIMEOUT_SEC = float(os.getenv("ARPING_TIMEOUT_SEC", "1"))
+FPING_TIMEOUT_SEC = int(os.getenv("FPING_TIMEOUT_SEC", "10"))
+ARPING_IFACE = os.getenv("ARPING_IFACE", "").strip()
 
 _name_cache = {}  # mac -> {"name": Optional[str], "ts": float}
 _rdns_lock = threading.Lock()
@@ -191,16 +194,6 @@ def post_json(path: str, payload: dict):
 def get_arp_table():
     devices = []
     try:
-        subprocess.run(
-            ["fping", "-a", "-g", "-q", "-r", "1", LAN_CIDR],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10
-        )
-    except Exception as e:
-        logger.error(f"fping failed: {e}")
-
-    try:
         output = subprocess.check_output(["ip", "neigh", "show"]).decode()
         for line in output.splitlines():
             parts = line.split()
@@ -213,6 +206,53 @@ def get_arp_table():
         logger.error(f"ip neigh failed: {e}")
 
     return devices
+
+
+def _get_iface_for_ip(ip: str):
+    if ARPING_IFACE:
+        return ARPING_IFACE
+    try:
+        out = subprocess.check_output(["ip", "route", "get", ip], timeout=1).decode(errors="ignore")
+        parts = out.split()
+        if "dev" in parts:
+            return parts[parts.index("dev") + 1]
+    except Exception:
+        return None
+    return None
+
+
+def _ip_neigh_mac(ip: str):
+    try:
+        out = subprocess.check_output(["ip", "neigh", "show", ip], timeout=1).decode(errors="ignore")
+        parts = out.split()
+        if "lladdr" in parts:
+            return parts[parts.index("lladdr") + 1]
+    except Exception:
+        return None
+    return None
+
+
+def _arping(ip: str, iface: str):
+    if not iface:
+        return
+    try:
+        subprocess.run(["arping", "-c", "1", "-I", iface, ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=ARPING_TIMEOUT_SEC)
+    except Exception:
+        pass
+
+
+def _active_scan_ips():
+    try:
+        out = subprocess.check_output(
+            ["fping", "-a", "-g", "-q", "-r", "1", LAN_CIDR],
+            stderr=subprocess.DEVNULL,
+            timeout=FPING_TIMEOUT_SEC
+        ).decode(errors="ignore")
+        ips = [line.strip() for line in out.splitlines() if line.strip()]
+        return ips
+    except Exception as e:
+        logger.error(f"fping active scan failed: {e}")
+        return []
 
 
 def send_event(ev_type, message, mac=None):
@@ -228,15 +268,24 @@ def robust_scan_job():
     try:
         logger.info("Running scan...")
         now = time.time()
-        current_arp = get_arp_table()
+        alive_ips = _active_scan_ips()
+        logger.info(f"Active scan found {len(alive_ips)} alive IPs")
+        ingested = 0
 
-        for entry in current_arp:
-            mac = entry["mac"]
-            ip = entry["ip"]
+        for ip in alive_ips:
+            mac = _ip_neigh_mac(ip)
+            if not mac:
+                iface = _get_iface_for_ip(ip)
+                _arping(ip, iface)
+                mac = _ip_neigh_mac(ip)
+
+            if not mac:
+                continue
+
             if ip.startswith("172.") and mac.lower().startswith("02:42:"):
                 continue
 
-            host = resolve_name(ip, mac)
+            host = resolve_name(ip, mac) or _rdns_with_timeout(ip, 1)
             vend = mac_vendor(mac)
 
             if mac not in device_state:
@@ -251,6 +300,7 @@ def robust_scan_job():
                     "vendor": vend,
                     "tags": []
                 })
+                ingested += 1
             else:
                 if device_state[mac]["ip"] != ip:
                     send_event("IP_CHANGED", f"Device {mac} changed IP {device_state[mac]['ip']} -> {ip}", mac)
@@ -268,12 +318,14 @@ def robust_scan_job():
                     "hostname": host,
                     "vendor": vend
                 })
+                ingested += 1
 
         for mac, data in device_state.items():
             if data["is_online"] and (now - data["last_seen"] > OFFLINE_AFTER_SEC):
                 logger.info(f"Device Offline: {mac}")
                 send_event("OFFLINE", f"Device {mac} went offline", mac)
                 data["is_online"] = False
+        logger.info(f"Scan ingested {ingested} devices")
     except Exception as e:
         logger.error(f"scan job failed: {e}")
 
