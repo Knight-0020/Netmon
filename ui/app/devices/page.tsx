@@ -4,6 +4,7 @@ import useSWR, { mutate } from 'swr';
 import { fetcher, patcher } from '@/lib/api';
 import { useState } from 'react';
 import { Search, Edit2, Save, X, Server, Wifi } from 'lucide-react';
+import Link from 'next/link';
 
 export default function DevicesPage() {
     const { data: devices, error } = useSWR('/devices', fetcher);
@@ -25,6 +26,11 @@ export default function DevicesPage() {
         if (filter === 'ONLINE') return matchesSearch && d.is_online;
         if (filter === 'OFFLINE') return matchesSearch && !d.is_online;
         return matchesSearch;
+    }).sort((a: any, b: any) => {
+        if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
+        const aTime = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+        const bTime = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+        return bTime - aTime;
     });
 
     const startEdit = (d: any) => {
@@ -72,7 +78,7 @@ export default function DevicesPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filtered.map((device: any) => (
-                    <div key={device.mac} className={`bg-slate-800 rounded-xl border ${device.is_online ? 'border-green-500/30' : 'border-slate-700'} p-6 shadow-lg transition-all hover:border-slate-600`}>
+                    <div key={device.mac} className={`group bg-slate-800 rounded-xl border ${device.is_online ? 'border-green-500/30' : 'border-slate-700'} p-6 shadow-lg transition-all hover:border-slate-600`}>
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex items-center gap-3">
                                 <div className={`p-2 rounded-lg ${device.is_online ? 'bg-green-500/20 text-green-500' : 'bg-slate-700 text-slate-500'}`}>
@@ -91,7 +97,9 @@ export default function DevicesPage() {
                                         </div>
                                     ) : (
                                         <h3 className="text-white font-semibold flex items-center gap-2">
-                                            {device.name || device.hostname || 'Unknown Device'}
+                                            <Link className="hover:underline" href={`/devices/${encodeURIComponent(device.mac)}`}>
+                                                {device.name || device.hostname || 'Unknown Device'}
+                                            </Link>
                                             <button onClick={() => startEdit(device)} className="text-slate-500 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Edit2 size={12} />
                                             </button>

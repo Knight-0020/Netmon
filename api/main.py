@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from database import engine, Base, get_db
@@ -147,10 +147,12 @@ async def ingest_incident(incident_data: dict, db: AsyncSession = Depends(get_db
 # --- Read ---
 
 @app.get("/devices", response_model=List[schemas.DeviceOut])
-async def get_devices(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(models.Device).order_by(models.Device.is_online.desc(), models.Device.last_seen.desc())
-    )
+async def get_devices(online_only: Optional[bool] = None, db: AsyncSession = Depends(get_db)):
+    query = select(models.Device)
+    if online_only is not None:
+        query = query.where(models.Device.is_online == online_only)
+    query = query.order_by(models.Device.is_online.desc(), models.Device.last_seen.desc())
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -182,12 +184,22 @@ async def update_device(mac: str, update: schemas.DeviceUpdate, db: AsyncSession
 
 
 @app.get("/events", response_model=List[schemas.EventOut])
-async def get_events(limit: int = 50, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.Event).order_by(models.Event.timestamp.desc()).limit(limit))
+async def get_events(
+    limit: int = 50,
+    device_mac: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(models.Event)
+    if device_mac is not None:
+        device_mac = device_mac.strip()
+    if device_mac:
+        query = query.where(models.Event.device_mac == device_mac)
+    query = query.order_by(models.Event.timestamp.desc()).limit(limit)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
-@app.get("/internet/status")
+@app.get("/internet/status", response_model=schemas.InternetStatusOut)
 async def get_internet_status(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(models.InternetHealth).order_by(models.InternetHealth.timestamp.desc()).limit(10))
     checks = res.scalars().all()

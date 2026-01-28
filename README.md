@@ -34,8 +34,19 @@ NetMon is a powerful, self-hosted homelab monitoring tool for Raspberry Pi 5. It
    ```
 
 4. **Access:**
-   - **Web UI**: [http://localhost:3000](http://localhost:3000)
-   - **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+   - **Web UI**: http://localhost:3000
+   - **API Docs**: http://localhost:8000/docs
+
+## Tailscale Serve
+
+Expose the UI and API over Tailscale Serve:
+```bash
+tailscale serve --bg 9440 http://localhost:3000
+tailscale serve --bg 9441 http://localhost:8000
+tailscale serve status
+```
+
+When served this way, the UI uses internal proxy routes so it can call the API at port 9441 without hardcoding localhost.
 
 ## Troubleshooting
 
@@ -45,8 +56,8 @@ NetMon is a powerful, self-hosted homelab monitoring tool for Raspberry Pi 5. It
   - Check logs: `docker compose logs -f agent`
 
 - **UI shows "Loading..." or empty:**
-  - Ensure `NEXT_PUBLIC_API_BASE` in `.env` is reachable from your browser.
-  - If running on a remote Pi, set `NEXT_PUBLIC_API_BASE=http://<PI_IP>:8000` before building. Note: Next.js builds env vars at build time (except for newer experimental features), but our Dockerfile wraps this. (Ideally, rebuild if you change this).
+  - Ensure the API container is up and reachable on port 8000 locally.
+  - If you need a fixed API base URL, set `API_BASE` (runtime) or `NEXT_PUBLIC_API_BASE` (build-time) and rebuild the UI.
 
 - **API issues:**
   - Check logs: `docker compose logs -f api`

@@ -31,10 +31,12 @@ services:
     build:
       context: ./ui
       args:
-        NEXT_PUBLIC_API_BASE: https://kpvr.cinnebar-octatonic.ts.net:9441
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      API_BASE: ${API_BASE:-}
     depends_on:
       - api
 
@@ -52,6 +54,7 @@ services:
       OFFLINE_AFTER_SEC: ${OFFLINE_AFTER_SEC:-60}
       INTERNET_INTERVAL_SEC: ${INTERNET_INTERVAL_SEC:-5}
       PING_TARGETS: ${PING_TARGETS:-1.1.1.1,8.8.8.8}
+      INTERNET_DOWN_THRESHOLD: ${INTERNET_DOWN_THRESHOLD:-3}
     depends_on:
       - api
 

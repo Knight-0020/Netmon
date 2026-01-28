@@ -14,6 +14,7 @@ export default function Dashboard() {
 
     const onlineDevices = devices.filter((d: any) => d.is_online).length;
     const recentChecks = internet.recent_checks.slice(0, 3);
+    const recentChecksTable = internet.recent_checks.slice(0, 10);
     const activeIncidents = internet.incidents.filter((i: any) => !i.end_time);
 
     return (
@@ -82,7 +83,7 @@ export default function Dashboard() {
             </div>
 
             {/* Recent Activity */}
-            <h2 className="text-xl font-bold text-white mt-8 mb-4">Recent Activity</h2>
+            <h2 className="text-xl font-bold text-white mt-8 mb-4">Recent Checks</h2>
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
                 <table className="w-full text-left text-sm text-slate-400">
                     <thead className="bg-slate-900/50 text-slate-200">
@@ -95,7 +96,7 @@ export default function Dashboard() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
-                        {internet.recent_checks.map((check: any) => (
+                        {recentChecksTable.map((check: any) => (
                             <tr key={check.id} className="hover:bg-slate-700/50">
                                 <td className="p-4">{new Date(check.timestamp).toLocaleTimeString()}</td>
                                 <td className="p-4 font-mono text-slate-300">{check.target}</td>
@@ -112,6 +113,27 @@ export default function Dashboard() {
                         ))}
                     </tbody>
                 </table>
+            </div>
+
+            <h2 className="text-xl font-bold text-white mt-8 mb-4">Active Incidents</h2>
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
+                {activeIncidents.length === 0 ? (
+                    <div className="text-slate-400">No active incidents</div>
+                ) : (
+                    <ul className="space-y-3">
+                        {activeIncidents.map((inc: any) => (
+                            <li key={inc.id} className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="text-slate-200 font-medium">{inc.type}</div>
+                                    <div className="text-slate-400 text-sm">{inc.description}</div>
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                    Started {new Date(inc.start_time).toLocaleString()}
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
         </div>
     );
