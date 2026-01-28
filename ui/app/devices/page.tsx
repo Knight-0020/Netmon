@@ -53,11 +53,8 @@ export default function DevicesPage() {
         if (name) return name;
         const host = device.hostname?.trim();
         if (host) return host;
-        if (device.vendor) {
-            const macSuffix = String(device.mac || '').slice(-5);
-            return `${device.vendor} (${macSuffix})`;
-        }
-        return 'Unknown Device';
+        const vendor = device.vendor?.trim();
+        return vendor || 'Unknown Device';
     };
 
     return (

@@ -39,9 +39,9 @@ async def ingest_device(device_in: schemas.DeviceCreate, db: AsyncSession = Depe
         device.last_seen = now_utc()
         device.ip_address = device_in.ip_address
         device.is_online = True
-        if device_in.hostname:
+        if device_in.hostname and not device.hostname:
             device.hostname = device_in.hostname
-        if device_in.vendor:
+        if device_in.vendor and not device.vendor:
             device.vendor = device_in.vendor
         if device_in.tags is not None:
             device.tags = device_in.tags

@@ -7,6 +7,7 @@ NetMon is a powerful, self-hosted homelab monitoring tool for Raspberry Pi 5. It
 - **Internet Health**: Monitors latency and uptime for ping targets, DNS, and HTTP.
 - **Event Log**: Tracks when devices join, leave, or change IP.
 - **Single Command Deploy**: Runs entirely via Docker Compose.
+ - **Hostname Guessing**: Best-effort name resolution using rDNS, mDNS, NetBIOS, and optional nmap.
 
 ## Prerequisites
 - **Hardware**: Raspberry Pi 5 (recommended) or any Linux host.
@@ -58,6 +59,15 @@ When served this way, the UI uses internal proxy routes so it can call the API a
 - **UI shows "Loading..." or empty:**
   - Ensure the API container is up and reachable on port 8000 locally.
   - If you need a fixed API base URL, set `API_BASE` (runtime) or `NEXT_PUBLIC_API_BASE` (build-time) and rebuild the UI.
+
+## Hostname Guessing
+
+Hostname guessing is best-effort and optional. The agent tries rDNS first, then mDNS, NetBIOS, and optional nmap.
+Extra tools are installed in the agent image:
+- `avahi-utils` (mDNS)
+- `samba-common-bin` (nmblookup / NetBIOS)
+- `nmap` (optional fallback)
+- `nbtscan` (optional NetBIOS)
 
 - **API issues:**
   - Check logs: `docker compose logs -f api`

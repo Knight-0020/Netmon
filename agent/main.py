@@ -6,6 +6,9 @@ import requests
 import socket
 import logging
 import re
+import shutil
+import threading
+import concurrent.futures
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -20,6 +23,12 @@ INTERNET_DOWN_THRESHOLD = int(os.getenv("INTERNET_DOWN_THRESHOLD", "3"))
 
 REQ_TIMEOUT = 2
 OUI_PATH = "/usr/share/ieee-data/oui.txt"
+ENABLE_HOSTNAME_RESOLVE = os.getenv("ENABLE_HOSTNAME_RESOLVE", "false").lower() == "true"
+RESOLVE_METHODS = [m.strip().lower() for m in os.getenv("RESOLVE_METHODS", "rdns,mdns,netbios,nmap").split(",") if m.strip()]
+NAME_CACHE_TTL_SEC = int(os.getenv("NAME_CACHE_TTL_SEC", "43200"))
+
+_name_cache = {}  # mac -> {"name": Optional[str], "ts": float}
+_rdns_lock = threading.Lock()
 
 
 def load_oui_db(path: str):
@@ -59,6 +68,119 @@ def mac_vendor(mac: str):
     return OUI_DB.get(normalized[:6])
 
 
+def _strip_hostname(name: str):
+    if not name:
+        return None
+    name = name.strip()
+    if not name:
+        return None
+    if "." in name:
+        name = name.split(".")[0]
+    return name or None
+
+
+def _rdns_lookup(ip: str):
+    try:
+        name = socket.gethostbyaddr(ip)[0]
+        return _strip_hostname(name)
+    except Exception:
+        return None
+
+
+def _rdns_with_timeout(ip: str, timeout_sec: float):
+    # gethostbyaddr can block; run in a thread with timeout
+    with _rdns_lock:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            fut = executor.submit(_rdns_lookup, ip)
+            try:
+                return fut.result(timeout=timeout_sec)
+            except Exception:
+                return None
+
+
+def _mdns_lookup(ip: str):
+    if not shutil.which("avahi-resolve"):
+        return None
+    try:
+        out = subprocess.check_output(["avahi-resolve", "-a", ip], timeout=1).decode(errors="ignore")
+        # format: "IP\thostname"
+        parts = out.strip().split()
+        if len(parts) >= 2:
+            return _strip_hostname(parts[1])
+    except Exception:
+        return None
+    return None
+
+
+def _netbios_lookup(ip: str):
+    if shutil.which("nmblookup"):
+        try:
+            out = subprocess.check_output(["nmblookup", "-A", ip], timeout=1).decode(errors="ignore")
+            for line in out.splitlines():
+                if "<00>" in line and "UNIQUE" in line:
+                    name = line.split()[0]
+                    if name != "__MSBROWSE__":
+                        return _strip_hostname(name)
+        except Exception:
+            return None
+    if shutil.which("nbtscan"):
+        try:
+            out = subprocess.check_output(["nbtscan", "-r", ip], timeout=1).decode(errors="ignore")
+            for line in out.splitlines():
+                if ip in line:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return _strip_hostname(parts[1])
+        except Exception:
+            return None
+    return None
+
+
+def _nmap_lookup(ip: str):
+    if not shutil.which("nmap"):
+        return None
+    try:
+        out = subprocess.check_output(["nmap", "-sn", ip], timeout=1).decode(errors="ignore")
+        for line in out.splitlines():
+            if "Nmap scan report for" in line:
+                name = line.split("Nmap scan report for", 1)[1].strip()
+                if "(" in name:
+                    name = name.split("(", 1)[0].strip()
+                return _strip_hostname(name)
+    except Exception:
+        return None
+    return None
+
+
+def resolve_name(ip: str, mac: str):
+    if not ENABLE_HOSTNAME_RESOLVE:
+        return None
+    if not mac:
+        return None
+
+    now = time.time()
+    cached = _name_cache.get(mac)
+    if cached and (now - cached["ts"] < NAME_CACHE_TTL_SEC):
+        return cached["name"]
+
+    name = None
+    for method in RESOLVE_METHODS:
+        if method == "rdns":
+            name = _rdns_with_timeout(ip, 1)
+        elif method == "mdns":
+            name = _mdns_lookup(ip)
+        elif method == "netbios":
+            name = _netbios_lookup(ip)
+        elif method == "nmap":
+            name = _nmap_lookup(ip)
+
+        if name:
+            break
+
+    _name_cache[mac] = {"name": name, "ts": now}
+    return name
+
+
 def post_json(path: str, payload: dict):
     try:
         requests.post(f"{API_BASE}{path}", json=payload, timeout=REQ_TIMEOUT)
@@ -93,13 +215,6 @@ def get_arp_table():
     return devices
 
 
-def resolve_hostname(ip):
-    try:
-        return socket.gethostbyaddr(ip)[0]
-    except:
-        return None
-
-
 def send_event(ev_type, message, mac=None):
     post_json("/ingest/event", {"type": ev_type, "message": message, "device_mac": mac})
 
@@ -121,7 +236,7 @@ def robust_scan_job():
             if ip.startswith("172.") and mac.lower().startswith("02:42:"):
                 continue
 
-            host = resolve_hostname(ip)
+            host = resolve_name(ip, mac)
             vend = mac_vendor(mac)
 
             if mac not in device_state:
