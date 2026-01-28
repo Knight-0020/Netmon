@@ -1,57 +1,62 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from datetime import datetime
 
+
 class DeviceBase(BaseModel):
-    mac: String
-    ip_address: Optional[String] = None
-    hostname: Optional[String] = None
-    vendor: Optional[String] = None
-    tags: List[String] = []
+    mac: str
+    ip_address: Optional[str] = None
+    hostname: Optional[str] = None
+    vendor: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+
 
 class DeviceCreate(DeviceBase):
     pass
 
+
 class DeviceUpdate(BaseModel):
-    name: Optional[String] = None
-    tags: Optional[List[String]] = None
-    notes: Optional[String] = None
+    name: Optional[str] = None
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
+
 
 class DeviceOut(DeviceBase):
-    name: Optional[String] = None
-    first_seen: datetime
-    last_seen: Optional[datetime]
-    is_online: bool
-    notes: Optional[String] = None
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        orm_mode = True
+    name: Optional[str] = None
+    first_seen: datetime
+    last_seen: Optional[datetime] = None
+    is_online: bool
+    notes: Optional[str] = None
+
 
 class EventCreate(BaseModel):
-    type: String
-    message: String
-    device_mac: Optional[String] = None
+    type: str
+    message: str
+    device_mac: Optional[str] = None
     timestamp: Optional[datetime] = None
 
+
 class EventOut(EventCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     timestamp: datetime
 
-    class Config:
-        orm_mode = True
 
 class HealthCheckCreate(BaseModel):
-    target: String
-    latency_ms: Optional[float]
-    status: String
-    check_type: String
+    target: str
+    latency_ms: Optional[float] = None
+    status: str
+    check_type: str
+
 
 class IncidentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     start_time: datetime
-    end_time: Optional[datetime]
-    type: String
-    description: String
-
-    class Config:
-        orm_mode = True
+    end_time: Optional[datetime] = None
+    type: str
+    description: str

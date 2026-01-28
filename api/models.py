@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, Integer, Float, ForeignKey, JSON
 from sqlalchemy.sql import func
-from .database import Base
+from database import Base
 
 class Device(Base):
     __tablename__ = "devices"

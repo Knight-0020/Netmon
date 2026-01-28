@@ -51,3 +51,8 @@ NetMon is a powerful, self-hosted homelab monitoring tool for Raspberry Pi 5. It
 - **API issues:**
   - Check logs: `docker compose logs -f api`
   - Ensure Postgres is healthy (`docker compose ps db`).
+
+## Recent Updates
+- **Agent Fixes**: Corrected `API_BASE` environment variable handling in `agent/main.py`.
+- **API Docker**: Updated startup command to correctly locate the FastAPI app (`main:app`).
+- **Configuration**: Improved `docker-compose.yml` to better handle `NEXT_PUBLIC_API_BASE` for the UI.
