@@ -9,6 +9,7 @@ import re
 import shutil
 import threading
 import concurrent.futures
+import ipaddress
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -221,15 +222,17 @@ def _get_iface_for_ip(ip: str):
     return None
 
 
-def _ip_neigh_mac(ip: str):
+def _ip_neigh_entry(ip: str):
     try:
         out = subprocess.check_output(["ip", "neigh", "show", ip], timeout=1).decode(errors="ignore")
         parts = out.split()
+        state = parts[-1] if parts else ""
+        mac = None
         if "lladdr" in parts:
-            return parts[parts.index("lladdr") + 1]
+            mac = parts[parts.index("lladdr") + 1]
+        return {"mac": mac, "state": state}
     except Exception:
-        return None
-    return None
+        return {"mac": None, "state": ""}
 
 
 def _arping(ip: str, iface: str):
@@ -259,6 +262,27 @@ def _active_scan_ips():
         return []
 
 
+def _is_docker_iface(iface: str):
+    if not iface:
+        return False
+    return iface == "docker0" or iface.startswith("br-")
+
+
+def _is_docker_mac(mac: str):
+    return bool(mac) and mac.lower().startswith("02:42:")
+
+
+def _is_docker_ip(ip: str):
+    try:
+        return ipaddress.ip_address(ip) in ipaddress.ip_network("172.16.0.0/12")
+    except Exception:
+        return False
+
+
+def _log_skip(ip: str, reason: str):
+    logger.info(f"Skip {ip}: {reason}")
+
+
 def send_event(ev_type, message, mac=None):
     post_json("/ingest/event", {"type": ev_type, "message": message, "device_mac": mac})
 
@@ -281,16 +305,31 @@ def robust_scan_job():
         ingested = 0
 
         for ip in alive_ips:
-            mac = _ip_neigh_mac(ip)
-            if not mac:
-                iface = _get_iface_for_ip(ip)
-                _arping(ip, iface)
-                mac = _ip_neigh_mac(ip)
-
-            if not mac:
+            iface = _get_iface_for_ip(ip)
+            if _is_docker_iface(iface):
+                _log_skip(ip, f"docker iface {iface}")
                 continue
 
-            if ip.startswith("172.") and mac.lower().startswith("02:42:"):
+            entry = _ip_neigh_entry(ip)
+            mac = entry["mac"]
+            state = entry["state"]
+
+            if state in ["FAILED", "INCOMPLETE"]:
+                _log_skip(ip, f"bad neigh state {state}")
+                continue
+
+            if not mac:
+                _arping(ip, iface)
+                entry = _ip_neigh_entry(ip)
+                mac = entry["mac"]
+                state = entry["state"]
+
+            if not mac:
+                _log_skip(ip, "no mac after arping")
+                continue
+
+            if _is_docker_mac(mac) or (_is_docker_ip(ip) and LAN_CIDR.startswith("192.168.")):
+                _log_skip(ip, f"docker filtered mac={mac}")
                 continue
 
             host = resolve_name(ip, mac) or _rdns_with_timeout(ip, 1)
