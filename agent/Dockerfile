@@ -1,23 +1,21 @@
-FROM python:3.11-slim
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Install Network Tools
-RUN apt-get update && apt-get install -y \
-    iproute2 \
-    fping \
-    iputils-ping \
-    iputils-arping \
-    ieee-data \
-    avahi-utils \
-    samba-common-bin \
-    nmap \
-    nbtscan \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY go.mod go.sum* ./
+# We need gcc for some net packages? No, pure go is fine usually.
+# However, for CGO_ENABLED=0 static binary:
+ENV CGO_ENABLED=0
+RUN go mod download
 
 COPY . .
+RUN go build -o agent .
 
-CMD ["python", "-u", "main.py"]
+FROM alpine:latest
+# Install basic tools just in case (e.g. for debugging or shell access)
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+COPY --from=builder /app/agent .
+
+CMD ["./agent"]

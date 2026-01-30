@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: netmon_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-netmon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netmon}
+      POSTGRES_DB: ${POSTGRES_DB:-netmon}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # Bind to localhost only, accessible by host-mode services
+    networks:
+      - internal_net
+
+  server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    container_name: netmon_server
+    restart: always
+    network_mode: host # Required for reliable LAN visibility and simpler localhost access
+    environment:
+      - POSTGRES_DSN=postgres://${POSTGRES_USER:-netmon}:${POSTGRES_PASSWORD:-netmon}@127.0.0.1:5432/${POSTGRES_DB:-netmon}?sslmode=disable
+      - SERVER_PORT=${SERVER_PORT:-8000}
+      - PING_TARGETS=${PING_TARGETS:-1.1.1.1,8.8.8.8}
+      - API_SECRET=${API_SECRET:-changeme} # Basic shared secret for agent-server comms if needed, though mostly trusting LAN for now
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    depends_on:
+      - postgres
+
+  agent:
+    build:
+      context: ../agent
+      dockerfile: Dockerfile
+    container_name: netmon_agent
+    restart: always
+    network_mode: host # Required for ICMP/ARP scanning
+    privileged: true # Often needed for raw socket access (ICMP)
+    environment:
+      - SERVER_URL=http://127.0.0.1:${SERVER_PORT:-8000}
+      - SCAN_INTERVAL_SEC=${SCAN_INTERVAL_SEC:-20}
+      - LAN_CIDR=${LAN_CIDR:-192.168.1.0/24}
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
+
+
+networks:
+  internal_net:

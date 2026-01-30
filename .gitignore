@@ -1,9 +1,22 @@
+# Binaries
+agent/agent
+server/netmon-server
+
+# Dependencies
+node_modules
+ui/node_modules
+
+# Build Output
+ui/dist
+ui_dist
+
+# Env
+# Note: For this personal project, we might want to ignore .env or keep it for convenience if no secrets.
+# Given it's a private tool and user copied example, we usually ignore real env.
 .env
-__pycache__/
-*.pyc
-node_modules/
-.next/
-dist/
-build/
-.DS_Store
+
+# Docker
+deploy/.env
+.idea
+.vscode
 *.log

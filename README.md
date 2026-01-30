@@ -1,79 +1,41 @@
-# NetMon
+# NetMon v3
 
-NetMon is a powerful, self-hosted homelab monitoring tool for Raspberry Pi 5. It provides device discovery (ARP/Ping), internet health monitoring (Ping/DNS/HTTP), and a clean web dashboard.
+A self-hosted LAN and Internet monitor designed for Raspberry Pi.
+Features:
+- Active/Passive LAN discovery (MAC, IP, Hostname, Vendor).
+- Internet Health Monitoring (Ping, DNS, HTTP).
+- Event Logging & Telegram Alerts.
+- Clean, responsive Dashboard.
 
-## Features
-- **Device Discovery**: Scans LAN using `ip neigh` and `fping`. Tracks Online/Offline status and IP history.
-- **Internet Health**: Monitors latency and uptime for ping targets, DNS, and HTTP.
-- **Event Log**: Tracks when devices join, leave, or change IP.
-- **Single Command Deploy**: Runs entirely via Docker Compose.
- - **Hostname Guessing**: Best-effort name resolution using rDNS, mDNS, NetBIOS, and optional nmap.
+## Architecture
+- **Agent**: Go static binary. Runs in host network mode. Scans LAN via ICMP and ARP.
+- **Server**: Go REST API + Scheduler. Serves the UI. Connects to Postgres.
+- **UI**: React + Vite SPA. Bundled and served by the Go server.
+- **Database**: PostgreSQL (Dockerized).
 
-## Prerequisites
-- **Hardware**: Raspberry Pi 5 (recommended) or any Linux host.
-- **Software**: Docker & Docker Compose.
+## Quick Start (Reset & Run)
 
-## Quick Start
+Run this one-liner in your terminal to wipe the previous install (if any), pull changes, and start fresh:
 
-1. **Clone & Setup:**
-   ```bash
-   # (Assuming you are in the project root)
-   cp .env.example .env
-   ```
-
-2. **Configure Network:**
-   Check your LAN CIDR:
-   ```bash
-   ip a
-   # Look for valid interface (e.g. eth0 or wlan0) with an IP like 192.168.1.x/24
-   ```
-   Edit `.env` and set `LAN_CIDR` accordingly (e.g., `192.168.1.0/24`).
-
-3. **Run:**
-   ```bash
-   docker compose up --build -d
-   ```
-
-4. **Access:**
-   - **Web UI**: http://localhost:3000
-   - **API Docs**: http://localhost:8000/docs
-
-## Tailscale Serve
-
-Expose the UI and API over Tailscale Serve:
 ```bash
-tailscale serve --bg 9440 http://localhost:3000
-tailscale serve --bg 9441 http://localhost:8000
-tailscale serve status
+# Windows (PowerShell)
+docker compose down; Remove-Item -Recurse -Force agent, server, ui, deploy 2>$null; git pull; Copy-Item .env.example .env; docker compose up --build -d
 ```
 
-When served this way, the UI uses internal proxy routes so it can call the API at port 9441 without hardcoding localhost.
+Manual Steps:
+1. Copy `.env.example` to `.env` and edit values if needed.
+2. Run `docker compose up --build -d`.
+3. Open `http://localhost:8000`.
 
-## Troubleshooting
+## Tailscale Exposure
+To expose this via Tailscale securely:
 
-- **Agent sees no devices:**
-  - Ensure the host machine is actually on the network configured in `LAN_CIDR`.
-  - The agent container runs with `network_mode: host` and `cap_add: [NET_RAW, NET_ADMIN]`. This is required for `fping` and ARP table access.
-  - Check logs: `docker compose logs -f agent`
+```bash
+sudo tailscale serve --bg --https=9440 http://127.0.0.1:8000
+```
+Then access via your Tailscale machine name, e.g., `https://raspberrypi:9440`.
 
-- **UI shows "Loading..." or empty:**
-  - Ensure the API container is up and reachable on port 8000 locally.
-  - If you need a fixed API base URL, set `API_BASE` (runtime) or `NEXT_PUBLIC_API_BASE` (build-time) and rebuild the UI.
-
-## Hostname Guessing
-
-Hostname guessing is best-effort and optional. The agent tries rDNS first, then mDNS, NetBIOS, and optional nmap.
-Extra tools are installed in the agent image:
-- `avahi-utils` (mDNS)
-- `samba-common-bin` (nmblookup / NetBIOS)
-- `nmap` (optional fallback)
-- `nbtscan` (optional NetBIOS)
-
-- **API issues:**
-  - Check logs: `docker compose logs -f api`
-  - Ensure Postgres is healthy (`docker compose ps db`).
-
-## Recent Updates
-- **Agent Fixes**: Corrected `API_BASE` environment variable handling in `agent/main.py`.
-- **API Docker**: Updated startup command to correctly locate the FastAPI app (`main:app`).
-- **Configuration**: Improved `docker-compose.yml` to better handle `NEXT_PUBLIC_API_BASE` for the UI.
+## Development
+- **Agent**: `cd agent && go run .`
+- **Server**: `cd server && go run .`
+- **UI**: `cd ui && npm install && npm run dev`
